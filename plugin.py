@@ -18,6 +18,31 @@ from pathlib import Path
 # Per-session state: one SQLite connection per folder, reused across calls.
 _conn: sqlite3.Connection | None = None
 _loaded_folder: str | None = None
+_column_types: dict[str, dict[str, str]] = {}   # table → {col → data_type}
+
+
+# ── type inference ───────────────────────────────────────────────────────────
+
+_INFER_SAMPLE = 500  # rows to sample per column
+
+def _infer_type(values: list[str]) -> str:
+    """Return INTEGER, REAL, or TEXT based on a sample of string values."""
+    non_empty = [v for v in values if v.strip()]
+    if not non_empty:
+        return "TEXT"
+    try:
+        for v in non_empty:
+            int(v.strip())
+        return "INTEGER"
+    except ValueError:
+        pass
+    try:
+        for v in non_empty:
+            float(v.strip())
+        return "REAL"
+    except ValueError:
+        pass
+    return "TEXT"
 
 
 # ── CSV loading ──────────────────────────────────────────────────────────────
@@ -34,6 +59,9 @@ def _sniff_delimiter(path: Path) -> str:
 
 def _load_folder(folder: str) -> sqlite3.Connection:
     """Read every .csv / .tsv in folder into a fresh in-memory SQLite DB."""
+    global _column_types
+    _column_types = {}
+
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
 
@@ -52,18 +80,28 @@ def _load_folder(folder: str) -> sqlite3.Connection:
                 continue  # skip empty files
 
             headers = [h.strip() for h in raw_headers]
-            quoted  = [f'"{h}"' for h in headers]
-            cols_ddl = ", ".join(f"{q} TEXT" for q in quoted)
 
-            conn.execute(f'CREATE TABLE IF NOT EXISTS "{table}" ({cols_ddl})')
-            conn.executemany(
-                f'INSERT INTO "{table}" VALUES ({", ".join("?" * len(headers))})',
-                (
-                    [c.strip() for c in row]
-                    for row in reader
-                    if len(row) == len(headers)
-                ),
-            )
+            # Read all rows into memory for both type inference and insertion.
+            rows = [
+                [c.strip() for c in row]
+                for row in reader
+                if len(row) == len(headers)
+            ]
+
+        # Infer the data type for each column from the first N rows.
+        sample = rows[:_INFER_SAMPLE]
+        _column_types[table] = {
+            col: _infer_type([row[i] for row in sample])
+            for i, col in enumerate(headers)
+        }
+
+        quoted   = [f'"{h}"' for h in headers]
+        cols_ddl = ", ".join(f"{q} TEXT" for q in quoted)
+        conn.execute(f'CREATE TABLE IF NOT EXISTS "{table}" ({cols_ddl})')
+        conn.executemany(
+            f'INSERT INTO "{table}" VALUES ({", ".join("?" * len(headers))})',
+            rows,
+        )
 
         print(f"[csv-plugin] loaded: {path.name} → table '{table}'", file=sys.stderr)
 
@@ -86,16 +124,16 @@ def _folder(params: dict) -> str:
 # ── column shape (reused in several methods) ─────────────────────────────────
 
 def _pragma_columns(db: sqlite3.Connection, table: str) -> list:
-    cur = db.execute(f'PRAGMA table_info("{table}")')
+    cur   = db.execute(f'PRAGMA table_info("{table}")')
+    types = _column_types.get(table, {})
     return [
         {
-            "name": row["name"],
-            "data_type": "TEXT",
-            "is_nullable": True,
-            "column_default": None,
-            "is_primary_key": bool(row["pk"]),
+            "name":             row["name"],
+            "data_type":        types.get(row["name"], "TEXT"),
+            "is_pk":            bool(row["pk"]),
+            "is_nullable":      True,
             "is_auto_increment": False,
-            "comment": None,
+            "default_value":    None,
         }
         for row in cur
     ]
@@ -124,14 +162,14 @@ def handle(method: str, params: dict) -> object:
         return [Path(folder).name]
 
     if method in ("get_schemas", "get_foreign_keys", "get_indexes",
-                  "get_views", "get_routines"):
+                  "get_views", "get_routines", "get_routine_parameters"):
         return []
 
     if method == "get_tables":
         cur = db.execute(
             "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
         )
-        return [{"name": row["name"], "schema": None, "comment": None} for row in cur]
+        return [{"name": row["name"]} for row in cur]
 
     if method == "get_columns":
         return _pragma_columns(db, params.get("table", ""))
@@ -141,12 +179,14 @@ def handle(method: str, params: dict) -> object:
         cur = db.execute(
             "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
         )
-        tables = [{"name": r["name"], "schema": None, "comment": None} for r in cur]
-        return {
-            "tables": tables,
-            "columns":      {t["name"]: _pragma_columns(db, t["name"]) for t in tables},
-            "foreign_keys": {t["name"]: [] for t in tables},
-        }
+        return [
+            {
+                "name":         row["name"],
+                "columns":      _pragma_columns(db, row["name"]),
+                "foreign_keys": [],
+            }
+            for row in cur
+        ]
 
     if method == "get_all_columns_batch":
         return {t: _pragma_columns(db, t) for t in params.get("tables", [])}
@@ -160,20 +200,26 @@ def handle(method: str, params: dict) -> object:
         page      = max(1, int(params.get("page", 1)))
         page_size = max(1, int(params.get("page_size", 100)))
 
-        t0  = time.monotonic()
-        cur = db.execute(query)
+        cur      = db.execute(query)
         all_rows = cur.fetchall()
-        elapsed  = int((time.monotonic() - t0) * 1000)
-
-        col_names = [d[0] for d in (cur.description or [])]
-        offset    = (page - 1) * page_size
+        total    = len(all_rows)
+        offset   = (page - 1) * page_size
 
         return {
-            "columns":          col_names,
-            "rows":             [list(r) for r in all_rows[offset : offset + page_size]],
-            "total_count":      len(all_rows),
-            "execution_time_ms": elapsed,
+            "columns":       [d[0] for d in (cur.description or [])],
+            "rows":          [list(r) for r in all_rows[offset : offset + page_size]],
+            "affected_rows": cur.rowcount if cur.rowcount >= 0 else 0,
+            "truncated":     total > offset + page_size,
+            "pagination": {
+                "page":       page,
+                "page_size":  page_size,
+                "total_rows": total,
+            },
         }
+
+    # ── read-only: DML not supported ─────────────────────────────────────────
+    if method in ("insert_record", "update_record", "delete_record"):
+        raise ValueError("CSV files are read-only")
 
     raise NotImplementedError(method)
 
