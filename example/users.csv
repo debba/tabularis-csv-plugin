@@ -1,0 +1,6 @@
+id,name,email,country,signup_date
+1,Alice Martin,alice@example.com,France,2023-01-15
+2,Bob Chen,bob@example.com,USA,2023-02-20
+3,Carla Rossi,carla@example.com,Italy,2023-03-05
+4,David Kim,david@example.com,South Korea,2023-04-10
+5,Eva Müller,eva@example.com,Germany,2023-05-22

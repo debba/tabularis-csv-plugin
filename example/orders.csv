@@ -1,0 +1,11 @@
+id,user_id,product_id,quantity,order_date,status
+1,1,1,1,2024-01-03,delivered
+2,1,2,2,2024-01-03,delivered
+3,2,3,1,2024-01-10,shipped
+4,3,5,1,2024-01-15,delivered
+5,3,6,2,2024-01-15,delivered
+6,4,4,5,2024-02-01,delivered
+7,5,7,1,2024-02-14,processing
+8,2,1,1,2024-02-20,shipped
+9,1,6,1,2024-03-01,processing
+10,4,2,3,2024-03-05,delivered
