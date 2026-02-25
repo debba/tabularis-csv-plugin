@@ -15,8 +15,8 @@
     "alter_primary_key": false
   },
   "data_types": [
-    { "name": "TEXT",    "category": "string",  "has_length": false },
-    { "name": "INTEGER", "category": "numeric", "has_length": false },
-    { "name": "REAL",    "category": "numeric", "has_length": false }
+    { "name": "TEXT",    "category": "string",  "requires_length": false, "requires_precision": false },
+    { "name": "INTEGER", "category": "numeric", "requires_length": false, "requires_precision": false },
+    { "name": "REAL",    "category": "numeric", "requires_length": false, "requires_precision": false }
   ]
 }
