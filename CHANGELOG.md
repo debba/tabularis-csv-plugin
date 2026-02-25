@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.0.1] - 2026-02-25
+
+### Fixed
+
+- `manifest.json`: renamed `has_length` → `requires_length` / `requires_precision` to match the Tabularis `DataTypeInfo` struct. Previously the plugin silently failed to register after installation.
+
 ## [1.0.0] - 2026-02-25
 
 ### Added
