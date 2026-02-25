@@ -16,10 +16,8 @@ jobs:
 
       - name: Build zip
         run: |
-          mkdir -p dist/csv
-          cp plugin.py manifest.json dist/csv/
-          chmod +x dist/csv/plugin.py
-          cd dist && zip -r ../csv-plugin.zip csv/
+          chmod +x plugin.py
+          zip csv-plugin.zip plugin.py manifest.json
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
