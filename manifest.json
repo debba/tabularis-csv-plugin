@@ -2,7 +2,7 @@
   "$schema": "https://tabularis.dev/schemas/plugin-manifest.json",
   "id": "csv",
   "name": "CSV Folder",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Query a folder of .csv / .tsv files as a database. Each file becomes a table.",
   "default_port": null,
   "executable": "plugin.py",

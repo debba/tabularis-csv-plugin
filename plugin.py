@@ -205,15 +205,17 @@ def handle(method: str, params: dict) -> object:
         total    = len(all_rows)
         offset   = (page - 1) * page_size
 
+        has_more = total > offset + page_size
         return {
             "columns":       [d[0] for d in (cur.description or [])],
             "rows":          [list(r) for r in all_rows[offset : offset + page_size]],
             "affected_rows": cur.rowcount if cur.rowcount >= 0 else 0,
-            "truncated":     total > offset + page_size,
+            "truncated":     has_more,
             "pagination": {
                 "page":       page,
                 "page_size":  page_size,
                 "total_rows": total,
+                "has_more":   has_more,
             },
         }
 
